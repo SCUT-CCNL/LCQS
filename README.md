@@ -50,4 +50,4 @@ LIBZPAQ is a public domain API of Matt Mahoney's ZPAQ project. The library used 
 
 LIBZPAQ is optimized with vector instruction sets. The context model computations are time-consuming when predicting bits and updating parameters, so we rewrite several parts of them with vector instructions.
 
-To use the optimized version, you need to replace the file _libzpaq.cpp_ with the one of this project. Note that for JIT version, you can compile it with the same instructions. But for NOJIT version, you should replace the option -msse2 with -msse4.
+To use the optimized version, you need to replace the file _libzpaq.cpp_ with the one of this project. Note that for JIT version, you can compile it with the same instructions. But for NOJIT version, you should replace the option "-msse2" with "-msse4".
