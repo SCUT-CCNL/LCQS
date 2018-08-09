@@ -43,3 +43,11 @@ Decompress the file _sample.lcqs_ and output to the file _sample.in_.
     lcqs r sample.lcqs sample.part 10 100
 
 Fetch the original content from 10th line to 100th line.
+
+# LIBZPAQ
+
+LIBZPAQ is a public domain API of Matt Mahoney's ZPAQ project. The library used in this project is a optimized version based on LIBZPAQ of zpaq 7.15. For detailed descriptions of LIBZPAQ, refer to [ZPAQ](http://mattmahoney.net/dc/zpaq.html).
+
+LIBZPAQ is optimized with vector instruction sets. The context model computations are time-consuming when predicting bits and updating parameters, so we rewrite several parts of them with vector instructions.
+
+To use the optimized version, you need to replace the file _libzpaq.cpp_ with the one of this project. Note that for JIT version, you can compile it with the same instructions. But for NOJIT version, you should replace the option -msse2 with -msse4.
