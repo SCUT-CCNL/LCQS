@@ -21,6 +21,7 @@ void libzpaq::error(const char* msg) {
 }
 
 void c_test(int argc, char* argv[]) {
+    puts("Start Compression...");
     lcqs::compressor co(0);
     lcqs::param par;
     if(argc >= 6) par.set_shreshold(stod(argv[5]));
@@ -32,9 +33,11 @@ void c_test(int argc, char* argv[]) {
     while(getline(in, s)) co.qs_add(s);
     co.qs_compress();
     co.end();
+    puts("Compression Completed.");
 }
 
 void d_test(int argc, char* argv[]) {
+    puts("Start Decompression...");
     lcqs::decompressor de(0);
     de.open(argv[2]);
     de.read_format();
@@ -47,9 +50,11 @@ void d_test(int argc, char* argv[]) {
     for(int i = 0; i < ans.size(); ++i) {
         out << ans[i] << '\n';
     }
+    puts("Decompression Completed!");
 }
 
 void r_test(int argc, char* argv[]) {
+    puts("Start Random decompression...");
     lcqs::decompressor de(0);
     de.open(argv[2]);
     de.read_format();
@@ -62,16 +67,27 @@ void r_test(int argc, char* argv[]) {
     for(int i = 0; i < ans.size(); ++i) {
         out << ans[i] << '\n';
     }
+    puts("Random Decompression Completed!");
 }
 
 int main(int argc, char* argv[])
 {
-    if(argv[1][0] == 'c') c_test(argc, argv);
+    if(argc == 1){
+	   puts("Try to type 'lcqs h' for help.");
+    }
+    else if(argv[1][0] == 'c') c_test(argc, argv);
     else if(argv[1][0] == 'd') d_test(argc, argv);
     else if(argv[1][0] == 'r') r_test(argc, argv);
-    else {
-        puts("Invalid option. Please refer to readme for usage.");
-        return -1;
+    else if(argv[1][0] == 'h') {
+        puts("\n@author: Jiabing Fu, Bixin Ke, Shoubin Dong.\n@date：2018.08.08.\n@institute: South China University of Technology.\n");
+        puts("Usage:\n");
+        puts("For compression: lcqs c <input-file> <output-file>. \nExample: lcqs c sample.in sample.lcqs.\n");
+        puts("For decompression: lcqs d <input-file> <output-file>. \nExample: lcqs d sample.lcqs sample.in.\n");
+        puts("For random decompression: lcqs r <input-file> <output-file> <first-line> <last-line>. \nExample: lcqs r sample.lcqs sample.part 10 100.\n");
+    }
+    else{ 
+        puts("Invalid option. Try to type 'lcqs h' for help.:");
+    	return -1;
     }
     return 0;
 }
