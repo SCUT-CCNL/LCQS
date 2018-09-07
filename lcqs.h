@@ -1,3 +1,10 @@
+/***
+    @author: Jiabing Fu, Bixin Ke, Shoubin Dong.
+    @date：2018.08.08
+    @institute: South China University of Technology
+    @Paper: Submitted to Bioinformatics.
+***/
+
 #ifndef LCQS_H
 #define LCQS_H
 
