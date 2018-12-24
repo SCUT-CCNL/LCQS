@@ -22,15 +22,15 @@ class CompressJob;
 
 struct param {
     int k;
-    double shreshold;
+    double threshold;
     const char* out_name;
 
-    param():k(4), shreshold(0.1){}
+    param():k(4), threshold(0.1){}
 
-    void set_shreshold(double s) {
+    void set_threshold(double s) {
         if(s < 0.) s = 0.;
         if(s > 1.) s = 1.;
-        shreshold = s;
+        threshold = s;
     }
 
     void set_k(int _k) {
@@ -63,7 +63,6 @@ class compressor {
     param par;
     format fmt;
     int threads;
-    libzpaq::StringBuffer qs[2];
     std::vector<std::string> qs_raw;
     CompressJob* job;
     std::vector<ThreadID> tid;

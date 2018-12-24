@@ -24,7 +24,7 @@ void c_test(int argc, char* argv[]) {
     puts("Start Compression...");
     lcqs::compressor co(0);
     lcqs::param par;
-    if(argc >= 6) par.set_shreshold(stod(argv[5]));
+    if(argc >= 6) par.set_threshold(stod(argv[5]));
     if(argc >= 5) par.set_k(stol(argv[4]));
     par.set_outname(argv[3]);
     co.init(par);

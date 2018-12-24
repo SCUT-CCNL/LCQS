@@ -435,21 +435,21 @@ double compressor::get_table(const vector<string>& sample, unordered_map<long lo
             for(size_t l = i+1-k; l <= i; ++l) val = val << 7 | s[l];
             score += table[val];
         }
-        mx = max(mx, score/(s.size()-3));
+        mx = max(mx, score/(s.size()+1-k));
     }
     return mx;
 }
 
 void compressor::qs_compress() {
     double border;
-    const double shreshold = par.shreshold;
+    const double threshold = par.threshold;
     const int k = par.k;
     unordered_map<long long, double> table;
     table.max_load_factor(0.5);
     {
         vector<string> sample(qs_raw.begin(), qs_raw.size() < 100000 ? qs_raw.end() : qs_raw.begin()+100000);
         get_score(sample);
-        border = get_table(sample, table, k) * par.shreshold;
+        border = get_table(sample, table, k) * par.threshold;
         job->score = fmt.score;
     }
     StringBuffer sb[2];
@@ -507,7 +507,6 @@ struct ExtractJob {         // list of jobs
     vector<Block> block;      // list of data blocks to extract
     vector<BlockInfo> binfo;
     vector<string>* qout;
-    size_t q_len;
     ExtractJob(): job(0) {
         init_mutex(mutex);
     }
