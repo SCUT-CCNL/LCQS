@@ -1,8 +1,8 @@
 /***
     @author: Jiabing Fu, Bixin Ke, Shoubin Dong.
-    @date：2018.08.08
+    @date：2019.07.14
     @institute: South China University of Technology
-    @Paper: Submitted to Bioinformatics.
+    @Paper: Submitted to BMC Bioinformatics.
 ***/
 
 #include "lcqs.h"
@@ -22,15 +22,13 @@ void libzpaq::error(const char* msg) {
 
 void c_test(int argc, char* argv[]) {
     puts("Start Compression...");
-    lcqs::compressor co(0);
+    lcqs::compressor co(16);
     lcqs::param par;
     if(argc >= 6) par.set_threshold(stod(argv[5]));
     if(argc >= 5) par.set_k(stol(argv[4]));
     par.set_outname(argv[3]);
     co.init(par);
-    ifstream in(argv[2]);
-    string s;
-    while(getline(in, s)) co.qs_add(s);
+    par.set_inname(argv[2]);
     co.qs_compress();
     co.end();
     puts("Compression Completed.");
@@ -43,13 +41,8 @@ void d_test(int argc, char* argv[]) {
     de.read_format();
     de.read_table();
     de.read_content();
-    de.close();
-    vector<string> ans;
-    de.get_qs(ans);
-    ofstream out(argv[3], ios::out);
-    for(int i = 0; i < ans.size(); ++i) {
-        out << ans[i] << '\n';
-    }
+    de.set_out(argv[3]);
+    de.get_qs();
     puts("Decompression Completed!");
 }
 
@@ -60,13 +53,8 @@ void r_test(int argc, char* argv[]) {
     de.read_format();
     de.read_table();
     uint32_t l = stoul(argv[4]), r = stoul(argv[5]);
-    vector<string> ans;
-    de.query(ans, l, r);
-    de.close();
-    ofstream out(argv[3], ios::out);
-    for(int i = 0; i < ans.size(); ++i) {
-        out << ans[i] << '\n';
-    }
+    de.set_out(argv[3]);
+    de.query(l, r);
     puts("Random Decompression Completed!");
 }
 

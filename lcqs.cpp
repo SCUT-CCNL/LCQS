@@ -1,7 +1,8 @@
 /***
     @author: Jiabing Fu, Bixin Ke, Shoubin Dong.
-    @date：2018.08.08
+    @date：2019.07.14
     @institute: South China University of Technology
+    @Paper: Submitted to BMC Bioinformatics.
 ***/
 
 #include "lcqs.h"
@@ -16,6 +17,7 @@
 #include <cstdlib>
 #include <thread>
 #include <unordered_map>
+#include <queue>
 
 using namespace libzpaq;
 using namespace std;
@@ -120,7 +122,6 @@ struct CJ {
     string comment;        // if "" use default
     string method;         // compression level or "" to mark end of data
     Semaphore full;        // 1 if in is FULL of data ready to compress
-    Semaphore compressed;  // 1 if out contains COMPRESSED data
     CJ(): state(EMPTY) {}
 };
 
@@ -167,25 +168,29 @@ private:
     int front;             // next to remove from queue
     Semaphore empty;       // number of empty buffers ready to fill
     Semaphore compressors; // number of compressors available to run
+    Semaphore compressed;
+    queue<int> wq;
+    bool finished;
+    int count;
 public:
     friend ThreadReturn compressThread(void* arg);
     friend ThreadReturn writeThread(void* arg);
-    CompressJob(int threads, int buffers): job(0), q(0), qsize(buffers), front(0) {
+    CompressJob(int threads, int buffers): job(0), q(0), qsize(buffers), front(0), finished(false), count(0) {
         q=new CJ[buffers];
         if (!q) throw std::bad_alloc();
         init_mutex(mutex);
         empty.init(buffers);
         compressors.init(threads);
+        compressed.init(0);
         for (int i=0; i<buffers; ++i) {
             q[i].full.init(0);
-            q[i].compressed.init(0);
         }
     }
     ~CompressJob() {
         for (int i=qsize-1; i>=0; --i) {
-            q[i].compressed.destroy();
             q[i].full.destroy();
         }
+        compressed.destroy();
         compressors.destroy();
         empty.destroy();
         destroy_mutex(mutex);
@@ -205,6 +210,7 @@ void CompressJob::write(StringBuffer& s, BlockInfo::Tag _tag, uint8_t bucket, ui
     for (unsigned k=(method=="")?qsize:1; k>0; --k) {
         empty.wait();
         lock(mutex);
+        ++count;
         unsigned i, j;
         for (i=0; i<qsize; ++i) {
             if (q[j=(i+front)%qsize].state==CJ::EMPTY) {
@@ -284,7 +290,8 @@ ThreadReturn compressThread(void* arg) {
 
             // Check for end of input
             if (cj.method=="") {
-                cj.compressed.signal();
+                job.wq.push(jobNumber);
+                job.compressed.signal();
                 release(job.mutex);
                 return 0;
             }
@@ -299,7 +306,8 @@ ThreadReturn compressThread(void* arg) {
             cj.in.resize(0);
             lock(job.mutex);
             cj.state=CJ::COMPRESSED;
-            cj.compressed.signal();
+            job.wq.push(jobNumber);
+            job.compressed.signal();
             job.compressors.signal();
             release(job.mutex);
         }
@@ -327,16 +335,20 @@ ThreadReturn writeThread(void* arg) {
 
         // work until done
         while (true) {
+            if(job.finished && job.count == 0) return 0;
 
             // wait for something to write
-            CJ& cj=job.q[job.front];  // no other threads move front
-            cj.compressed.wait();
+            job.compressed.wait();
+            lock(job.mutex);
+            CJ& cj=job.q[job.wq.front()];
+            job.wq.pop();
+            --job.count;
 
             // Quit if end of input
-            lock(job.mutex);
             if (cj.method=="") {
+                job.finished = true;
                 release(job.mutex);
-                return 0;
+                continue;
             }
 
             // Write
@@ -440,14 +452,20 @@ double compressor::get_table(const vector<string>& sample, unordered_map<long lo
     return mx;
 }
 
+char _s[51234];
+
 void compressor::qs_compress() {
     double border;
     const double threshold = par.threshold;
     const int k = par.k;
     unordered_map<long long, double> table;
     table.max_load_factor(0.5);
+    uint32_t num = 0;
+    string s;
+    vector<string> sample(100000, s);
     {
-        vector<string> sample(qs_raw.begin(), qs_raw.size() < 100000 ? qs_raw.end() : qs_raw.begin()+100000);
+        while(num < 100000 && gets(_s)) sample[num++] = _s;
+        sample.resize(num);
         get_score(sample);
         border = get_table(sample, table, k) * par.threshold;
         job->score = fmt.score;
@@ -457,7 +475,12 @@ void compressor::qs_compress() {
     long long base = 1;
     for(int i = 1; i < k; ++i) base = base << 7;
     base -= 1;
-    for(string& s : qs_raw) {
+    int flag = 0;
+    num = 0;
+    while(true) {
+        if(num < sample.size()) s.swap(sample[num++]);
+        else if(gets(_s)) s = _s;
+        else break;
         long long val = 0;
         for(int i = 0; i < k-1; ++i) val = val << 7 | s[i];
         double score = 0;
@@ -479,6 +502,14 @@ void compressor::qs_compress() {
             job->write(temp, BlockInfo::QUALITY, res, pre[res], cur[res], eline[res], METHOD);
             pre[res] = cur[res];
             eline[res] = cur[res+1];
+            if(res) ++flag;
+            else flag = 0;
+        }
+        if(flag >= 3) {
+            job->write(sb[0], BlockInfo::QUALITY, 0, pre[0], cur[0], eline[0], METHOD);
+            pre[0] = cur[0];
+            eline[0] = cur[1];
+            flag = 0;
         }
     }
     for(size_t i = 0; i < 2; ++i) {
@@ -487,7 +518,6 @@ void compressor::qs_compress() {
         }
     }
     for(int i = 0; i < 2; ++i) fmt.qlen[i] = cur[i];
-    vector<string>().swap(qs_raw);
 }
 
 struct Block {
@@ -503,15 +533,24 @@ struct Block {
 
 struct ExtractJob {         // list of jobs
     Mutex mutex;              // protects state
+    Mutex read_mutex;
     int job;                  // number of jobs started
+    FILE *fp, *fout;
+    uint32_t L, R;
     vector<Block> block;      // list of data blocks to extract
     vector<BlockInfo> binfo;
     vector<string>* qout;
+    vector<int8_t> flag[2];
+    vector<uint32_t> val[2];
+    uint32_t cur[2];
+    uint32_t mx[2];
     ExtractJob(): job(0) {
         init_mutex(mutex);
+        init_mutex(read_mutex);
     }
     ~ExtractJob() {
         destroy_mutex(mutex);
+        destroy_mutex(read_mutex);
     }
 };
 
@@ -583,9 +622,17 @@ ThreadReturn decompressThread(void* arg) {
             }
         }
         Block& b=job.block[next];
+        BlockInfo& info = job.binfo[b.info];
+        StringBuffer sb;
+        sb.resize(info.length);
+        lock(job.read_mutex);
+        fseeko(job.fp, info.pos, SEEK_SET);
+        fread(sb.data(), 1, info.length, job.fp);
+        b.in->swap(sb);
+        release(job.read_mutex);
 
         // Decompress
-        StringBuffer out, sb;
+        StringBuffer out;
         Decompresser d;
         d.setInput(b.in);
         d.setOutput(&out);
@@ -597,11 +644,11 @@ ThreadReturn decompressThread(void* arg) {
         delete b.in;
         b.in = NULL;
 
-        BlockInfo& info = job.binfo[b.info];
 
         // Write
         if(b.id == -1) {
-            vector<string>& q = job.qout[info.bucket];
+            const auto& id = info.bucket;
+            vector<string>& q = job.qout[id];
             size_t os = info.start;
             unpack(out, score);
             char c;
@@ -612,7 +659,51 @@ ThreadReturn decompressThread(void* arg) {
                 }
                 ++os;
             }
-            continue;
+            auto &_val = job.val[id];
+            auto &_flag = job.flag[id];
+            uint32_t pos = lower_bound(_val.begin(), _val.end(), info.end) - _val.begin();
+            {
+                uint32_t j = job.mx[id] + 1;
+                while(j < pos && _flag[j] == 1) ++j;
+                if(j == pos) {
+                    for(j = job.mx[id]+1; j <= pos; ++j) _flag[j] = 2;
+                }
+                else _flag[pos] = 1;
+            }
+            if(_flag[pos] == 1) continue;
+            if(id == 1) {
+                job.mx[1] = pos;
+                continue;
+            }
+            auto &val0 = job.val[0], &val1 = job.val[1];
+            if(info.bucket == 0 && info.start <= job.L) {
+                uint32_t temp = info.eline;
+                for(uint32_t i = info.start; i < job.L; ++i) {
+                    if(job.qout[0][i].size() == 0) ++temp;
+                }
+                job.cur[1] = temp;
+                job.cur[0] = job.L;
+            }
+            uint32_t l = job.cur[0];
+            size_t sz = 0;
+            while(job.cur[0] < val0[pos] && job.cur[1] < val1[job.mx[1]]) {
+                if(job.qout[0][job.cur[0]].size() == 0) {
+                    job.qout[0][job.cur[0]].swap(job.qout[1][job.cur[1]++]);
+                }
+                sz += job.qout[0][job.cur[0]].size() + 1;
+                ++job.cur[0];
+            }
+            uint32_t r = min(job.cur[0], job.R);
+            StringBuffer sb(sz);
+            while(l < r) {
+                auto &s = job.qout[0][l++];
+                sb.write(s.c_str(), s.size());
+                sb.put('\n');
+                s.resize(0);
+                string().swap(s);
+            }
+            fwrite(sb.c_str(), 1, sb.size(), job.fout);
+            job.mx[0] = pos;
         }
         
     } // end while true
@@ -626,30 +717,43 @@ decompressor::decompressor(int _threads): threads(_threads), job(new ExtractJob)
     job->qout = qs_raw;
 }
 
+void decompressor::open(char *s) {
+    job->fp = fopen(s, "rb");
+}
+
+void decompressor::set_out(const char *s) {
+    job->fout = fopen(s, "w");
+}
+
 void decompressor::read_format() {
-    fmt.read(fp);
+    fmt.read(job->fp);
     for(int i = 0; i < 2; ++i) qs_raw[i].resize(fmt.qlen[i]);
 }
 
 void decompressor::read_content() {
     for(size_t j = 0; j < job->binfo.size(); ++j) {
         BlockInfo& b = job->binfo[j];
-        fseeko(fp, b.pos, SEEK_SET);
         StringBuffer sb;
-        sb.resize(b.length);
-        fread(sb.data(), 1, b.length, fp);
         qs_add(sb, j);
     }
 }
 
 void decompressor::read_table() {
     int64_t pos;
-    fread(&pos, sizeof pos, 1, fp);
-    fseeko(fp, pos, SEEK_SET);
+    fread(&pos, sizeof pos, 1, job->fp);
+    fseeko(job->fp, pos, SEEK_SET);
     BlockInfo info;
-    while(info.read(fp)) {
+    int cnt[2] {0};
+    while(info.read(job->fp)) {
         job->binfo.push_back(info);
+        ++cnt[info.bucket];
     }
+    for(int i = 0; i < 2; ++i) job->flag[i].resize(cnt[i]+1), job->flag[i][0] = 2;
+    for(int i = 0; i < 2; ++i) job->val[i].resize(cnt[i]+1), cnt[i] = 1;
+    for(auto& _ : job->binfo) job->val[_.bucket][cnt[_.bucket]++] = _.end;
+    for(auto& _ : job->val) sort(_.begin(), _.end());
+    for(auto& _ : job->cur) _ = 0xffffffffu;
+    for(auto& _ : job->mx) _ = 0;
 }
 
 void decompressor::qs_add(StringBuffer& q, int i) {
@@ -665,34 +769,43 @@ void decompressor::start() {
 
 void decompressor::end() {
     for (unsigned i=0; i<tid.size(); ++i) join(tid[i]);
+    close();
+}
+
+void decompressor::close() {
+    fclose(job->fp);
+}
+
+void decompressor::get_qs() {
+    job->L = 0; job->R = qs_raw[0].size();
+    start();
+    end();
+    uint32_t a = job->cur[0], b = job->cur[1];
+    StringBuffer sb;
+    for(; a < job->R; ++a) {
+        string &s = qs_raw[0][a].size() == 0 ? qs_raw[1][b++] : qs_raw[0][a];
+        sb.write(s.c_str(), s.size());
+        sb.put('\n');
+    }
+    fwrite(sb.c_str(), 1, sb.size(), job->fout);
     delete job;
 }
 
-void decompressor::get_qs(vector<string>& ans) {
-    start();
-    end();
-    size_t a, b;
-    for(a = 0, b = 0; a < qs_raw[0].size(); ++a) {
-        if(qs_raw[0][a].size() == 0) qs_raw[0][a].swap(qs_raw[1][b++]);
-    }
-    ans.swap(qs_raw[0]);
-}
-
 void decompressor::get_block(uint32_t L, uint32_t R) {
+    vector<bool> in(job->binfo.size(), false);
     for(uint8_t i = 0; i < 2; ++i) {
         uint32_t l = 0xffffffffu, r = 0;
         for(size_t j = 0; j < job->binfo.size(); ++j) {
             BlockInfo& b = job->binfo[j];
             if(i == b.bucket && b.end > L && b.start < R) {
-                fseeko(fp, b.pos, SEEK_SET);
-                StringBuffer sb;
-                sb.resize(b.length);
-                fread(sb.data(), 1, b.length, fp);
-                qs_add(sb, j);
+                in[j] = true;
                 l = min(l, b.eline);
                 r = max(r, b.eline);
             }
         }
+        auto &_val = job->val[i];
+        job->mx[i] = lower_bound(_val.begin(), _val.end(), L+1) - _val.begin() - 1;
+        job->flag[i][job->mx[i]] = 2;
         L = l;
         l = r; r = fmt.qlen[(i+1)%2];
         for(auto& b : job->binfo) if(i == b.bucket) {
@@ -700,27 +813,30 @@ void decompressor::get_block(uint32_t L, uint32_t R) {
         }
         R = r;
     }
+    for(size_t j = 0; j < in.size(); ++j) if(in[j]) {
+        StringBuffer sb;
+        qs_add(sb, j);
+    }
 }
 
-void decompressor::query(vector<string>& ans, uint32_t _L, uint32_t _R) {
+void decompressor::query(uint32_t _L, uint32_t _R) {
     uint32_t L = _L - 1, R = _R;
     get_block(L, R);
+    job->L = L; job->R = R;
     start();
     end();
-    size_t a = L, c;
-    for(auto& b : job->binfo) if(b.bucket == 0 && b.start <= L && b.end > L) {
-        c = b.eline;
-        for(uint32_t i = b.start; i < L; ++i) {
-            if(qs_raw[0][i] == "") ++c;
-        }
-    }
-    ans.resize(R-L);
-    size_t d;
+    uint32_t a = job->cur[0];
+    uint32_t b = job->cur[1];
+    StringBuffer sb;
     while(a < R) {
-        if(qs_raw[0][a] == "") ans[d++].swap(qs_raw[1][c++]);
-        else ans[d++].swap(qs_raw[0][a]);
+        string &s = qs_raw[0][a].size() == 0 ? qs_raw[1][b++] : qs_raw[0][a];
+        sb.write(s.c_str(), s.size());
+        sb.put('\n');
         ++a;
     }
+    fwrite(sb.c_str(), 1, sb.size(), job->fout);
+    fclose(job->fout);
+    delete job;
 }
 
 }

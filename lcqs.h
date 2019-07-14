@@ -1,8 +1,8 @@
 /***
     @author: Jiabing Fu, Bixin Ke, Shoubin Dong.
-    @date：2018.08.08
+    @date：2019.07.14
     @institute: South China University of Technology
-    @Paper: Submitted to Bioinformatics.
+    @Paper: Submitted to BMC Bioinformatics.
 ***/
 
 #ifndef LCQS_H
@@ -42,6 +42,10 @@ struct param {
     void set_outname(const char* s) {
         out_name = s;
     }
+
+    void set_inname(const char* s) {
+        freopen(s, "r", stdin);
+    }
 };
 
 struct format {
@@ -75,7 +79,6 @@ public:
     void init(param _par);
     void write_format(FILE* f) { fmt.write(f); }
     void end();
-    void qs_add(const std::string& s) { qs_raw.push_back(s); }
     void qs_compress();
 };
 
@@ -87,20 +90,20 @@ class decompressor {
     std::vector<std::string> qs_raw[2];
     ExtractJob* job;
     std::vector<ThreadID> tid;
-    FILE* fp;
     void start();
     void end();
     void get_block(uint32_t l, uint32_t r);
 public:
     decompressor(int _threads);
-    void open(char* s) { fp = fopen(s, "rb"); }
+    void open(char* s);
     void read_format();
     void read_content();
-    void close() { fclose(fp); }
+    void close();
     void qs_add(libzpaq::StringBuffer& q, int i);
-    void get_qs(std::vector<std::string>& ans);
-    void query(std::vector<std::string>& ans, uint32_t L, uint32_t R);
+    void get_qs();
+    void query(uint32_t L, uint32_t R);
     void read_table();
+    void set_out(const char* s);
 };
 
 }
