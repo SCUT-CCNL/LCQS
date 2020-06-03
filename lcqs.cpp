@@ -2,7 +2,7 @@
     @author: Jiabing Fu, Bixin Ke, Shoubin Dong.
     @date：2019.07.14
     @institute: South China University of Technology
-    @Paper: Submitted to BMC Bioinformatics.
+    @Paper: Published in BMC Bioinformatics 2020.
 ***/
 
 #include "lcqs.h"
