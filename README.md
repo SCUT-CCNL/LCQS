@@ -1,5 +1,9 @@
 # LCQS
 
+## Cite
+
+This software implements the LCQS algorithm described in: Fu J , Ke B , Dong S . “LCQS: an efficient lossless compression tool of quality scores with random access functionality” [J]. BMC Bioinformatics, 2020, 21(1).
+
 ## Building
 
 LCQS is compiled on 64 bit Linux with g++ and C++11 standard. To build it, run the following command in the main directory:
